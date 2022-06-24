@@ -1,6 +1,6 @@
 Package tstruct provides template FuncMap helpers to construct struct literals within a Go template.
 
-**It is experimental. It has no version and no license on purpose. When I am happy (enough) with it, I will write a blog post and version and license it.**
+**It is experimental.**
 
 In your Go code:
 
@@ -13,7 +13,7 @@ type T struct {
 }
 
 m := template.FuncMap{ /* your func map here */ }
-err := tstruct.AddFuncMap[T]()
+err := tstruct.AddFuncMap[T](m)
 // handle err
 ```
 
