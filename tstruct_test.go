@@ -208,3 +208,16 @@ func TestSliceOfStructs(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAnonymousStructField(t *testing.T) {
+	type T struct {
+		X struct {
+			A int
+		}
+	}
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[T](m)
+	if err == nil {
+		t.Fatalf("expected error, got %#v", m)
+	}
+}

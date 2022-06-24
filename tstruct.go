@@ -43,6 +43,9 @@ func copyFuncMap(dst, src map[string]any) {
 
 // addStructFuncs adds funcs to fnmap to construct structs of type rt and to populate rt's fields.
 func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
+	if rt.Name() == "" {
+		return fmt.Errorf("anonymous struct (type %v) is not supported", rt)
+	}
 	// TODO: Accept namespacing prefix(es)?
 
 	// Make a struct constructor for rt with the same name as the struct.
