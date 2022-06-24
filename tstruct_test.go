@@ -108,3 +108,73 @@ func TestDevirtualization(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestFieldReuse(t *testing.T) {
+	type X struct {
+		F int
+	}
+	type Y struct {
+		F string
+	}
+	type W struct {
+		F Z
+	}
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[X](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tstruct.AddFuncMap[Y](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tstruct.AddFuncMap[W](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	m["yield"] = func(x any) error {
+		calls++
+		switch x.(type) {
+		case X:
+			want := X{F: 1}
+			if !reflect.DeepEqual(x, want) {
+				t.Fatalf("got %#v, want %#v", x, want)
+			}
+		case Y:
+			want := Y{F: "a"}
+			if !reflect.DeepEqual(x, want) {
+				t.Fatalf("got %#v, want %#v", x, want)
+			}
+		case W:
+			want := W{F: "za"}
+			if !reflect.DeepEqual(x, want) {
+				t.Fatalf("got %#v, want %#v", x, want)
+			}
+		default:
+			t.Fatalf("unexpected type %T", x)
+		}
+		return nil
+	}
+	const tmpl = `{{ yield (X (F 1)) }} {{ yield (Y (F "a")) }} {{ yield (W (F "a")) }}`
+	p, err := template.New("test").Funcs(m).Parse(tmpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Execute(io.Discard, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 3 {
+		t.Fatalf("got %d calls, want 3", calls)
+	}
+}
+
+func TestCollisionDetection(t *testing.T) {
+	m := make(template.FuncMap)
+	m["S"] = func(x any) error { return nil }
+	err := tstruct.AddFuncMap[S](m)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}

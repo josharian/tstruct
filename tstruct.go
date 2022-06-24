@@ -10,43 +10,46 @@ import (
 
 // AddFuncMap adds constructors for T to base.
 // base must not be nil.
-// AddFuncMap will return an error and leave base unmodified
-// if any FuncMap keys will be overwritten or duplicated.
+// AddFuncMap will return an error if there is a conflict with any existing entries in base.
+// AddFuncMap may modify entries in base that were added by a prior call to AddFuncMap.
+// If AddFuncMap returns a non-nil error, base will be unmodified.
 func AddFuncMap[T any](base map[string]any) error {
 	if base == nil {
 		return fmt.Errorf("base FuncMap is nil")
 	}
 	var t T
-	rv := reflect.ValueOf(t)
-	rt := rv.Type()
-	fm := make(map[string]any)
-	err := addStructMethods(rt, fm)
+	rt := reflect.TypeOf(t)
+	// Make a copy of base to modify.
+	// This is safe because all keys are strings and all values are funcs.
+	fnmap := make(map[string]any)
+	copyFuncMap(fnmap, base)
+	// Add struct and field funcs to fnmap.
+	err := addStructFuncs(rt, fnmap)
 	if err != nil {
 		return err
 	}
-	// Check all additions before we touch base.
-	for k := range fm {
-		if _, ok := base[k]; ok {
-			return fmt.Errorf("base FuncMap conflict on key %q", k)
-		}
-	}
-	// OK to add.
-	for k, v := range fm {
-		base[k] = v
-	}
+	// Nothing went wrong; copy our modified FuncMap back onto base.
+	copyFuncMap(base, fnmap)
 	return nil
 }
 
-func addStructMethods(rt reflect.Type, fm map[string]any) error {
+func copyFuncMap(dst, src map[string]any) {
+	for k, v := range src {
+		dst[k] = v
+	}
+}
+
+// addStructFuncs adds funcs to fnmap to construct structs of type rt and to populate rt's fields.
+func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
 	// TODO: Accept namespacing prefix(es)?
 
-	// Make a struct constructor with the same name as the struct.
+	// Make a struct constructor for rt with the same name as the struct.
 	// It takes as arguments functions that can be applied to modify the struct.
 	// We generate functions that return such arguments below.
-	if err := hasName(fm, rt.Name()); err != nil {
-		return err
+	if _, ok := fnmap[rt.Name()]; ok {
+		return fmt.Errorf("conflicting FuncMap entries for %s", rt.Name())
 	}
-	fm[rt.Name()] = func(args ...applyFn) reflect.Value {
+	fnmap[rt.Name()] = func(args ...applyFn) reflect.Value {
 		v := reflect.New(rt).Elem()
 		for _, apply := range args {
 			apply(v)
@@ -62,92 +65,132 @@ func addStructMethods(rt reflect.Type, fm map[string]any) error {
 		if !f.IsExported() {
 			continue
 		}
-
-		if f.Type.Kind() == reflect.Interface {
+		switch f.Type.Kind() {
+		case reflect.Interface:
 			return fmt.Errorf("interface field %s is not supported", f.Name)
-		}
-		method, ok := reflect.PtrTo(f.Type).MethodByName("TStructSet")
-		if ok {
-			if err := hasName(fm, f.Name); err != nil {
-				return err
-			}
-			if method.Type.NumOut() != 0 {
-				return fmt.Errorf("(*%v).TStructSet (for field %s) must not return values", f.Type.Name(), f.Name)
-			}
-			if _, ok := f.Type.MethodByName("TStructSet"); ok {
-				return fmt.Errorf("(%v).TStructSet (for field %s) must have pointer receiver", f.Type.Name(), f.Name)
-			}
-			fm[f.Name] = func(args ...reflect.Value) applyFn {
-				return func(v reflect.Value) {
-					x := reflect.New(method.Type.In(0).Elem())
-					dvArgs := make([]reflect.Value, len(args))
-					for i, arg := range args {
-						dvArgs[i] = devirt(arg)
-					}
-					args = append([]reflect.Value{x}, dvArgs...)
-					method.Func.Call(args)
-					v.FieldByIndex(f.Index).Set(x.Elem())
-				}
-			}
-			continue
-		}
-
-		if f.Type.Kind() == reflect.Struct {
-			// Process this struct as well.
+		case reflect.Struct:
+			// Process this struct's fields as well!
 			// TODO: avoid panic on recursively defined structs (but really, don't do that)
-			err := addStructMethods(f.Type, fm)
+			err := addStructFuncs(f.Type, fnmap)
 			if err != nil {
 				return err
 			}
 		}
-
 		name := f.Name
-		var fn any
-		switch f.Type.Kind() {
-		case reflect.Map:
-			// TODO: name = "Set" + name?
-			fn = func(k, e reflect.Value) applyFn {
-				return func(dst reflect.Value) {
-					f := dst.FieldByIndex(f.Index)
-					if f.IsZero() {
-						f.Set(reflect.MakeMap(f.Type()))
-					}
-					f.SetMapIndex(devirt(k), devirt(e))
-				}
-			}
-		case reflect.Slice:
-			// TODO: name = "Append" + name?
-			fn = func(e reflect.Value) applyFn {
-				return func(dst reflect.Value) {
-					f := dst.FieldByIndex(f.Index)
-					f.Set(reflect.Append(f, devirt(e)))
-				}
-			}
-		// TODO: reflect.Array: Set by index with a func named AtName? Does it even matter?
-		default:
-			// TODO: name = "Set" + name?
-			fn = func(x reflect.Value) applyFn {
-				return func(dst reflect.Value) {
-					dst.FieldByIndex(f.Index).Set(devirt(x))
-				}
-			}
-		}
-		if err := hasName(fm, name); err != nil {
+		// TODO: modify fn name based on field type? E.g. AppendF for a field named F of slice type?
+		fn, err := genSavedApplyFnForField(f, name)
+		if err != nil {
 			return err
 		}
-		fm[name] = fn
+		err = setSavedApplyFn(fnmap, name, rt, fn)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func hasName(fm map[string]any, name string) error {
-	_, ok := fm[name]
+// genSavedApplyFnForField generates a savedApplyFn for f, to be given name name.
+func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, error) {
+	method, ok := reflect.PtrTo(f.Type).MethodByName("TStructSet")
 	if ok {
-		return fmt.Errorf("duplicate FuncMap name %s", name)
+		if method.Type.NumOut() != 0 {
+			return nil, fmt.Errorf("(*%v).TStructSet (for field %s) must not return values", f.Type.Name(), f.Name)
+		}
+		if _, ok := f.Type.MethodByName("TStructSet"); ok {
+			return nil, fmt.Errorf("(%v).TStructSet (for field %s) must have pointer receiver", f.Type.Name(), f.Name)
+		}
+		return func(args ...reflect.Value) applyFn {
+			return func(v reflect.Value) {
+				x := reflect.New(method.Type.In(0).Elem())
+				dvArgs := make([]reflect.Value, len(args))
+				for i, arg := range args {
+					dvArgs[i] = devirt(arg)
+				}
+				args = append([]reflect.Value{x}, dvArgs...)
+				method.Func.Call(args)
+				v.FieldByIndex(f.Index).Set(x.Elem())
+			}
+		}, nil
+	}
+
+	switch f.Type.Kind() {
+	case reflect.Map:
+		return func(args ...reflect.Value) applyFn {
+			return func(dst reflect.Value) {
+				if len(args) != 2 {
+					panic("wrong number of args to " + name + ", expected 2 (key, elem)")
+				}
+				k, e := args[0], args[1]
+				f := dst.FieldByIndex(f.Index)
+				if f.IsZero() {
+					f.Set(reflect.MakeMap(f.Type()))
+				}
+				f.SetMapIndex(devirt(k), devirt(e))
+			}
+		}, nil
+	case reflect.Slice:
+		return func(args ...reflect.Value) applyFn {
+			return func(dst reflect.Value) {
+				if len(args) != 1 {
+					panic("wrong number of args to " + name + ", expected 1")
+				}
+				e := args[0]
+				f := dst.FieldByIndex(f.Index)
+				f.Set(reflect.Append(f, devirt(e)))
+			}
+		}, nil
+		// TODO: reflect.Array: Set by index with a func named AtName? Does it even matter?
+	}
+	// Everything else: do a plain Set
+	return func(args ...reflect.Value) applyFn {
+		return func(dst reflect.Value) {
+			if len(args) != 1 {
+				panic("wrong number of args to " + name + ", expected 1")
+			}
+			x := args[0]
+			dst.FieldByIndex(f.Index).Set(devirt(x))
+		}
+	}, nil
+}
+
+func setSavedApplyFn(fnmap map[string]any, name string, typ reflect.Type, fn savedApplyFn) error {
+	existing, ok := fnmap[name]
+	if !ok {
+		// We are the first ones to use this function name.
+		fnmap[name] = fn
+		return nil
+	}
+	dispatch, ok := existing.(savedApplyFn)
+	if !ok {
+		// Someone has used this name for something other than a savedApplyFn.
+		// Refuse to overwrite it.
+		return fmt.Errorf("conflicting FuncMap entries for %s", name)
+	}
+	// We previously used this name for a savedApplyFn.
+	// This happens when two structs share the same field name.
+	// In that case, replace the function with a new function
+	// that checks whether we're being applied to the right struct type,
+	// and if not, dispatches to the previous savedApplyFn.
+	fnmap[name] = func(args ...reflect.Value) applyFn {
+		return func(dst reflect.Value) {
+			if dst.Type() == typ {
+				// We can handle this type! Do it.
+				fn(args...)(dst)
+				return
+			}
+			// Dispatch to a previous function, in the hopes
+			// that it can handle this unknown type.
+			dispatch(args...)(dst)
+		}
 	}
 	return nil
 }
 
+// A savedApplyFn accepts arguments from a template and saves them to be applied later.
+type savedApplyFn = func(args ...reflect.Value) applyFn
+
+// An applyFn applies previously saved arguments to v.
 type applyFn = func(v reflect.Value)
 
 // devirt makes x have a concrete type.
