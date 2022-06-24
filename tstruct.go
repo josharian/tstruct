@@ -77,6 +77,22 @@ func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
 			if err != nil {
 				return err
 			}
+		case reflect.Slice:
+			if elem := f.Type.Elem(); elem.Kind() == reflect.Struct {
+				err := addStructFuncs(elem, fnmap)
+				if err != nil {
+					return err
+				}
+			}
+		case reflect.Map:
+			for _, elem := range []reflect.Type{f.Type.Key(), f.Type.Elem()} {
+				if elem.Kind() == reflect.Struct {
+					err := addStructFuncs(elem, fnmap)
+					if err != nil {
+						return err
+					}
+				}
+			}
 		}
 		name := f.Name
 		// TODO: modify fn name based on field type? E.g. AppendF for a field named F of slice type?

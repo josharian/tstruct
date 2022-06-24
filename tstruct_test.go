@@ -178,3 +178,33 @@ func TestCollisionDetection(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestSliceOfStructs(t *testing.T) {
+	type Sub struct {
+		X int
+	}
+	type T struct {
+		X []Sub
+	}
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[T](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m["yield"] = func(x any) error {
+		want := T{X: []Sub{{X: 1}, {X: 2}}}
+		if !reflect.DeepEqual(x, want) {
+			t.Fatalf("got %#v, want %#v", x, want)
+		}
+		return nil
+	}
+	const tmpl = `{{ yield (T (X (Sub (X 1))) (X (Sub (X 2)))) }}`
+	p, err := template.New("test").Funcs(m).Parse(tmpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Execute(io.Discard, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
