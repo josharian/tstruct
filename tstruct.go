@@ -1,6 +1,8 @@
-// Package tstruct provides template FuncMap helpers to construct struct literals from a Go template.
+// Package tstruct provides template FuncMap helpers to construct struct literals within a Go template.
 //
 // See also https://pkg.go.dev/rsc.io/tmplfunc.
+//
+// TODO: Unify docs with README, link to blog post (if I ever write one).
 package tstruct
 
 import (
