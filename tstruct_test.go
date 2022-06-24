@@ -68,3 +68,43 @@ func TestBasic(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDevirtualization(t *testing.T) {
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[S](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m["yield"] = func(x any) error {
+		want := S{
+			URL:  "a",
+			Data: map[string]int{"a": 1},
+			List: []int{1},
+			ZStr: "za",
+			Sub:  T{A: "a"},
+		}
+		if !reflect.DeepEqual(x, want) {
+			t.Fatalf("got %#v, want %#v", x, want)
+		}
+		return nil
+	}
+	const tmpl = `
+{{ yield
+	(S
+		(URL .Str)
+		(Data .Str .Int)
+		(List .Int)
+		(ZStr .Str)
+		(Sub (T (A .Str)))
+	)
+}}
+`
+	p, err := template.New("test").Funcs(m).Parse(tmpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Execute(io.Discard, map[string]any{"Str": "a", "Int": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

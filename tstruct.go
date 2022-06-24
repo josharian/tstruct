@@ -80,9 +80,13 @@ func addStructMethods(rt reflect.Type, fm map[string]any) error {
 			fm[f.Name] = func(args ...reflect.Value) applyFn {
 				return func(v reflect.Value) {
 					x := reflect.New(method.Type.In(0).Elem())
-					args = append([]reflect.Value{x}, args...)
+					dvArgs := make([]reflect.Value, len(args))
+					for i, arg := range args {
+						dvArgs[i] = devirt(arg)
+					}
+					args = append([]reflect.Value{x}, dvArgs...)
 					method.Func.Call(args)
-					v.FieldByName(f.Name).Set(x.Elem())
+					v.FieldByIndex(f.Index).Set(x.Elem())
 				}
 			}
 			continue
@@ -104,19 +108,19 @@ func addStructMethods(rt reflect.Type, fm map[string]any) error {
 			// TODO: name = "Set" + name?
 			fn = func(k, e reflect.Value) applyFn {
 				return func(dst reflect.Value) {
-					f := dst.FieldByName(f.Name)
+					f := dst.FieldByIndex(f.Index)
 					if f.IsZero() {
 						f.Set(reflect.MakeMap(f.Type()))
 					}
-					f.SetMapIndex(k, e)
+					f.SetMapIndex(devirt(k), devirt(e))
 				}
 			}
 		case reflect.Slice:
 			// TODO: name = "Append" + name?
 			fn = func(e reflect.Value) applyFn {
 				return func(dst reflect.Value) {
-					f := dst.FieldByName(f.Name)
-					f.Set(reflect.Append(f, e))
+					f := dst.FieldByIndex(f.Index)
+					f.Set(reflect.Append(f, devirt(e)))
 				}
 			}
 		// TODO: reflect.Array: Set by index with a func named AtName? Does it even matter?
@@ -124,7 +128,7 @@ func addStructMethods(rt reflect.Type, fm map[string]any) error {
 			// TODO: name = "Set" + name?
 			fn = func(x reflect.Value) applyFn {
 				return func(dst reflect.Value) {
-					dst.FieldByName(f.Name).Set(x)
+					dst.FieldByIndex(f.Index).Set(devirt(x))
 				}
 			}
 		}
@@ -145,3 +149,12 @@ func hasName(fm map[string]any, name string) error {
 }
 
 type applyFn = func(v reflect.Value)
+
+// devirt makes x have a concrete type.
+// TODO: is there a better/cheaper way to do this?
+func devirt(x reflect.Value) reflect.Value {
+	if x.Type().Kind() == reflect.Interface {
+		x = reflect.ValueOf(x.Interface())
+	}
+	return x
+}
