@@ -25,6 +25,7 @@ This will register FuncMap functions called `T`, `S`, `N`, `M`, and `L`, for the
     (L 1.0 2.0)
     (M "one map entry" 1)
     (M "another map entry" 2)
+    (M "x" 3 "y" 4)
     (N 42)
     (L 4.0)
 ) }}
@@ -36,7 +37,7 @@ And voila: Your template will be called with a struct equal to:
 T{
     S: "a string",
     N: 42,
-    M: map[string]int{"one map entry": 1, "another map entry": 2},
+    M: map[string]int{"one map entry": 1, "another map entry": 2, "x": 3, "y": 4},
     L: []float64{1.0, 2.0, 4.0},
 }
 ```

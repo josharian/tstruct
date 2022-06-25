@@ -204,6 +204,15 @@ func TestAppendMany(t *testing.T) {
 	testOne(t, want, tmpl)
 }
 
+func TestMapMany(t *testing.T) {
+	type T struct {
+		M map[string]int
+	}
+	want := T{M: map[string]int{"a": 1, "b": 2, "c": 3}}
+	const tmpl = `{{ yield (T (M "a" 1 "b" 2) (M "c" 3)) }}`
+	testOne(t, want, tmpl)
+}
+
 func TestInterfaceField(t *testing.T) {
 	type T struct {
 		I any

@@ -137,15 +137,18 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 	case reflect.Map:
 		return func(args ...reflect.Value) applyFn {
 			return func(dst reflect.Value) {
-				if len(args) != 2 {
-					panic("wrong number of args to " + name + ", expected 2 (key, elem)")
+				if len(args)&1 != 0 {
+					panic(fmt.Sprintf("odd number of args to %v, expected (key, elem) pairs, got %d args", name, len(args)))
 				}
-				k, e := args[0], args[1]
 				f := dst.FieldByIndex(f.Index)
 				if f.IsZero() {
 					f.Set(reflect.MakeMap(f.Type()))
 				}
-				f.SetMapIndex(devirt(k), devirt(e))
+				for i := 0; i < len(args); i += 2 {
+					k := args[i]
+					e := args[i+1]
+					f.SetMapIndex(devirt(k), devirt(e))
+				}
 			}
 		}, nil
 	case reflect.Slice:
