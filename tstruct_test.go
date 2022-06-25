@@ -204,6 +204,15 @@ func TestAppendMany(t *testing.T) {
 	testOne(t, want, tmpl)
 }
 
+func TestInterfaceField(t *testing.T) {
+	type T struct {
+		I any
+	}
+	testOne(t, T{I: 1}, `{{ yield (T (I 1)) }}`)
+	testOne(t, T{I: "a"}, `{{ yield (T (I "a")) }}`)
+	testOne(t, T{I: T{I: 1.0}}, `{{ yield (T (I (T (I 1.0)))) }}`)
+}
+
 func testOne[T any](t *testing.T, want T, tmpl string) {
 	t.Helper()
 	m := make(template.FuncMap)

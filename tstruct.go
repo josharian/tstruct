@@ -74,8 +74,6 @@ func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
 			continue
 		}
 		switch f.Type.Kind() {
-		case reflect.Interface:
-			return fmt.Errorf("interface field %s is not supported", f.Name)
 		case reflect.Struct:
 			// Process this struct's fields as well!
 			// TODO: avoid panic on recursively defined structs (but really, don't do that)
