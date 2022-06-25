@@ -20,15 +20,15 @@ err := tstruct.AddFuncMap[T](m)
 This will register FuncMap functions called `T`, `S`, `N`, `M`, and `L`, for the struct name and each of its fields. You can use them to construct and populate a T from a template:
 
 ```
-{{ template "template-that-renders-T" (T
-    (S "a string")
-    (L 1.0 2.0)
-    (M "one map entry" 1)
-    (M "another map entry" 2)
-    (M "x" 3 "y" 4)
-    (N 42)
-    (L 4.0)
-) }}
+{{ template "template-that-renders-T" T
+  (S "a string")
+  (L 1.0 2.0)
+  (M "one map entry" 1)
+  (M "another map entry" 2)
+  (M "x" 3 "y" 4)
+  (N 42)
+  (L 4.0)
+}}
 ```
 
 And voila: Your template will be called with a struct equal to:
@@ -65,7 +65,7 @@ type U struct {
 In your template:
 
 ```
-{{ $lab := (U (S "hi " 15)) }}
+{{ $lab := U (S "hi " 15) }}
 ```
 
 That creates a `U`, and populates its `S` field by calling `(*Repeat).TStructSet` with arguments `"hi "` and `15`.
