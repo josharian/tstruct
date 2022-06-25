@@ -22,9 +22,8 @@ This will register FuncMap functions called `T`, `S`, `N`, `M`, and `L`, for the
 ```
 {{ template "template-that-renders-T" (T
     (S "a string")
-    (L 1.0)
+    (L 1.0 2.0)
     (M "one map entry" 1)
-    (L 2.0)
     (M "another map entry" 2)
     (N 42)
     (L 4.0)

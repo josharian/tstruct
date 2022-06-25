@@ -127,10 +127,7 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 		return func(args ...reflect.Value) applyFn {
 			return func(v reflect.Value) {
 				x := reflect.New(method.Type.In(0).Elem())
-				dvArgs := make([]reflect.Value, len(args))
-				for i, arg := range args {
-					dvArgs[i] = devirt(arg)
-				}
+				dvArgs := devirtAll(args)
 				args = append([]reflect.Value{x}, dvArgs...)
 				method.Func.Call(args)
 				v.FieldByIndex(f.Index).Set(x.Elem())
@@ -156,12 +153,8 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 	case reflect.Slice:
 		return func(args ...reflect.Value) applyFn {
 			return func(dst reflect.Value) {
-				if len(args) != 1 {
-					panic("wrong number of args to " + name + ", expected 1")
-				}
-				e := args[0]
 				f := dst.FieldByIndex(f.Index)
-				f.Set(reflect.Append(f, devirt(e)))
+				f.Set(reflect.Append(f, devirtAll(args)...))
 			}
 		}, nil
 		// TODO: reflect.Array: Set by index with a func named AtName? Does it even matter?
@@ -224,4 +217,13 @@ func devirt(x reflect.Value) reflect.Value {
 		x = reflect.ValueOf(x.Interface())
 	}
 	return x
+}
+
+// devirtAll returns a copy of s containing devirtualized values.
+func devirtAll(s []reflect.Value) []reflect.Value {
+	c := make([]reflect.Value, len(s))
+	for i, x := range s {
+		c[i] = devirt(x)
+	}
+	return c
 }
