@@ -28,23 +28,12 @@ type T struct {
 }
 
 func TestBasic(t *testing.T) {
-	m := make(template.FuncMap)
-	err := tstruct.AddFuncMap[S](m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m["yield"] = func(x any) error {
-		want := S{
-			URL:  "x",
-			Data: map[string]int{"a": 1, "b": 2},
-			List: []int{-1, -2},
-			ZStr: "zhello",
-			Sub:  T{A: "A"},
-		}
-		if !reflect.DeepEqual(x, want) {
-			t.Fatalf("got %#v, want %#v", x, want)
-		}
-		return nil
+	want := S{
+		URL:  "x",
+		Data: map[string]int{"a": 1, "b": 2},
+		List: []int{-1, -2},
+		ZStr: "zhello",
+		Sub:  T{A: "A"},
 	}
 	const tmpl = `
 {{ yield
@@ -59,14 +48,7 @@ func TestBasic(t *testing.T) {
 	)
 }}
 `
-	p, err := template.New("test").Funcs(m).Parse(tmpl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = p.Execute(io.Discard, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testOne(t, want, tmpl)
 }
 
 func TestDevirtualization(t *testing.T) {
@@ -186,27 +168,9 @@ func TestSliceOfStructs(t *testing.T) {
 	type T struct {
 		X []Sub
 	}
-	m := make(template.FuncMap)
-	err := tstruct.AddFuncMap[T](m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m["yield"] = func(x any) error {
-		want := T{X: []Sub{{X: 1}, {X: 2}}}
-		if !reflect.DeepEqual(x, want) {
-			t.Fatalf("got %#v, want %#v", x, want)
-		}
-		return nil
-	}
 	const tmpl = `{{ yield (T (X (Sub (X 1))) (X (Sub (X 2)))) }}`
-	p, err := template.New("test").Funcs(m).Parse(tmpl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = p.Execute(io.Discard, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	want := T{X: []Sub{{X: 1}, {X: 2}}}
+	testOne(t, want, tmpl)
 }
 
 func TestAnonymousStructField(t *testing.T) {
@@ -235,28 +199,24 @@ func TestAppendMany(t *testing.T) {
 	type T struct {
 		X []int
 	}
+	want := T{X: []int{1, 2, 3, 4}}
+	const tmpl = `{{ yield (T (X 1 2 3) (X 4)) }}`
+	testOne(t, want, tmpl)
+}
+
+func testOne[T any](t *testing.T, want T, tmpl string) {
+	t.Helper()
 	m := make(template.FuncMap)
 	err := tstruct.AddFuncMap[T](m)
 	if err != nil {
 		t.Fatal(err)
 	}
 	m["yield"] = func(x any) error {
-		want := T{
-			X: []int{1, 2, 3, 4},
-		}
 		if !reflect.DeepEqual(x, want) {
 			t.Fatalf("got %#v, want %#v", x, want)
 		}
 		return nil
 	}
-	const tmpl = `
-{{ yield
-	(T
-		(X 1 2 3)
-		(X 4)
-	)
-}}
-`
 	p, err := template.New("test").Funcs(m).Parse(tmpl)
 	if err != nil {
 		t.Fatal(err)
