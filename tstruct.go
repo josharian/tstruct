@@ -21,6 +21,9 @@ func AddFuncMap[T any](base map[string]any) error {
 	}
 	var t T
 	rt := reflect.TypeOf(t)
+	if rt.Kind() != reflect.Struct {
+		return fmt.Errorf("non-struct type %v", rt)
+	}
 	// Make a copy of base to modify.
 	// This is safe because all keys are strings and all values are funcs.
 	fnmap := make(map[string]any)

@@ -221,3 +221,12 @@ func TestAnonymousStructField(t *testing.T) {
 		t.Fatalf("expected error, got %#v", m)
 	}
 }
+
+func TestNonStruct(t *testing.T) {
+	type T []int
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[T](m)
+	if err == nil {
+		t.Fatalf("expected error, got %#v", m)
+	}
+}
