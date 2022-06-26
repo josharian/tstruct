@@ -212,10 +212,9 @@ type savedApplyFn = func(args ...reflect.Value) applyFn
 type applyFn = func(v reflect.Value)
 
 // devirt makes x have a concrete type.
-// TODO: is there a better/cheaper way to do this?
 func devirt(x reflect.Value) reflect.Value {
 	if x.Type().Kind() == reflect.Interface {
-		x = reflect.ValueOf(x.Interface())
+		x = x.Elem()
 	}
 	return x
 }
