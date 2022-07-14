@@ -54,8 +54,22 @@ func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
 	// Make a struct constructor for rt with the same name as the struct.
 	// It takes as arguments functions that can be applied to modify the struct.
 	// We generate functions that return such arguments below.
-	if _, ok := fnmap[rt.Name()]; ok {
-		return fmt.Errorf("conflicting FuncMap entries for %s", rt.Name())
+	if x, ok := fnmap[rt.Name()]; ok {
+		// There's already a registered function with the name we want to use.
+		// If it is a tstruct constructor for the exact same type as we are
+		// trying to generate now, that's ok. Otherwise, fail.
+		fn, isStructCtor := x.(func(args ...applyFn) reflect.Value)
+		if !isStructCtor {
+			// Not a tstruct funcmap entry for a struct type.
+			return fmt.Errorf("conflicting FuncMap entries for %s", rt.Name())
+		}
+		// Use the function to create a struct!
+		// If it is not the same kind of struct that we want to add here,
+		// then there is a naming conflict.
+		if fn().Type() != rt {
+			// Not a tstruct funcmap entry for _this_ struct type.
+			return fmt.Errorf("conflicting FuncMap entries for %s", rt.Name())
+		}
 	}
 	fnmap[rt.Name()] = func(args ...applyFn) reflect.Value {
 		v := reflect.New(rt).Elem()

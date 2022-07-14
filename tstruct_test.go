@@ -244,3 +244,41 @@ func testOne[T any](t *testing.T, want T, tmpl string) {
 		t.Fatal(err)
 	}
 }
+
+func TestRepeatedSliceStruct(t *testing.T) {
+	type A struct {
+		I int
+	}
+	type T struct {
+		AA []A
+	}
+	type U struct {
+		AA []A
+	}
+	// Check that it is possible to add T and U to a single FuncMap.
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[T](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tstruct.AddFuncMap[U](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Check that it behaves correctly.
+	type V struct {
+		ET T
+		EU U
+	}
+	want := V{
+		ET: T{AA: []A{{I: 1}, {I: 2}}},
+		EU: U{AA: []A{{I: 1}, {I: 2}}},
+	}
+	const tmpl = `{{ yield
+(V
+	(ET (T (AA (A (I 1)) (A (I 2)))))
+	(EU (U (AA (A (I 1)) (A (I 2)))))
+)
+}}`
+	testOne(t, want, tmpl)
+}
