@@ -204,6 +204,16 @@ func TestAppendMany(t *testing.T) {
 	testOne(t, want, tmpl)
 }
 
+func TestConvert(t *testing.T) {
+	type Int int
+	type T struct {
+		X Int
+	}
+	want := T{X: 1}
+	const tmpl = `{{ yield (T (X 1)) }}`
+	testOne(t, want, tmpl)
+}
+
 func TestMapMany(t *testing.T) {
 	type T struct {
 		M map[string]int

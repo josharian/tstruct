@@ -142,7 +142,7 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 				dvArgs := devirtAll(args)
 				args = append([]reflect.Value{x}, dvArgs...)
 				method.Func.Call(args)
-				v.FieldByIndex(f.Index).Set(x.Elem())
+				convertAndSet(v.FieldByIndex(f.Index), x.Elem())
 			}
 		}, nil
 	}
@@ -181,7 +181,7 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 				panic("wrong number of args to " + name + ", expected 1")
 			}
 			x := args[0]
-			dst.FieldByIndex(f.Index).Set(devirt(x))
+			convertAndSet(dst.FieldByIndex(f.Index), devirt(x))
 		}
 	}, nil
 }
@@ -240,4 +240,8 @@ func devirtAll(s []reflect.Value) []reflect.Value {
 		c[i] = devirt(x)
 	}
 	return c
+}
+
+func convertAndSet(dst, src reflect.Value) {
+	dst.Set(src.Convert(dst.Type()))
 }
