@@ -87,6 +87,10 @@ func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
 		if !f.IsExported() {
 			continue
 		}
+		if f.Tag.Get("tstruct") == "-" {
+			// Ignore this struct field.
+			continue
+		}
 		switch f.Type.Kind() {
 		case reflect.Struct:
 			// Process this struct's fields as well!

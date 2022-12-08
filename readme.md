@@ -46,6 +46,8 @@ Note that order is irrelevant, except for slice appends.
 
 If you have multiple struct types whose fields share a name, the field setters will Just Work, despite having a single name. However, no two struct types may share a name, nor can a struct type and a field share a name.
 
+To request that tstruct ignore a struct field, add the struct tag `tstruct:"-"` to it.
+
 If you need to construct an unusual type from a template, there's a magic method: `TStructSet`. To use it, declare a type that has that method on a pointer receiver. It can accept any number of args, which will be passed directly from the template args. In the method, set the value according to the args.
 
 Example:

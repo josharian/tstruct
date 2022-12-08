@@ -292,3 +292,29 @@ func TestRepeatedSliceStruct(t *testing.T) {
 }}`
 	testOne(t, want, tmpl)
 }
+
+func TestStructFieldNameConflict(t *testing.T) {
+	type T struct{}
+	type S struct {
+		T T
+	}
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[S](m)
+	if err == nil {
+		t.Fatalf("expected error, got %#v", m)
+	}
+}
+
+func TestIgnoreStructField(t *testing.T) {
+	type T struct{}
+	type S struct {
+		X int
+		T T `tstruct:"-"`
+	}
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[S](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testOne(t, S{X: 1}, `{{ yield (S (X 1)) }}`)
+}
