@@ -173,7 +173,13 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 		return func(args ...reflect.Value) applyFn {
 			return func(dst reflect.Value) {
 				f := dst.FieldByIndex(f.Index)
-				f.Set(reflect.Append(f, devirtAll(args)...))
+				for _, arg := range devirtAll(args) {
+					if arg.Type().AssignableTo(f.Type()) {
+						f.Set(reflect.AppendSlice(f, arg))
+					} else {
+						f.Set(reflect.Append(f, arg))
+					}
+				}
 			}
 		}, nil
 		// TODO: reflect.Array: Set by index with a func named AtName? Does it even matter?

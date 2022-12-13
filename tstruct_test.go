@@ -232,7 +232,7 @@ func TestInterfaceField(t *testing.T) {
 	testOne(t, T{I: T{I: 1.0}}, `{{ yield (T (I (T (I 1.0)))) }}`)
 }
 
-func testOne[T any](t *testing.T, want T, tmpl string) {
+func testOne[T any](t *testing.T, want T, tmpl string, dots ...any) {
 	t.Helper()
 	m := make(template.FuncMap)
 	err := tstruct.AddFuncMap[T](m)
@@ -249,7 +249,11 @@ func testOne[T any](t *testing.T, want T, tmpl string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = p.Execute(io.Discard, nil)
+	var dot any
+	if len(dots) == 1 {
+		dot = dots[0]
+	}
+	err = p.Execute(io.Discard, dot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,4 +321,18 @@ func TestIgnoreStructField(t *testing.T) {
 		t.Fatal(err)
 	}
 	testOne(t, S{X: 1}, `{{ yield (S (X 1)) }}`)
+}
+
+func TestBringASliceToASliceFight(t *testing.T) {
+	type T struct {
+		X []int
+	}
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[T](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testOne(t, T{X: []int{1, 2, 3}}, `{{ yield (T (X .Ints)) }}`, map[string]any{"Ints": []int{1, 2, 3}})
+	testOne(t, T{X: []int{0, 1, 2, 3}}, `{{ yield (T (X 0 .Ints)) }}`, map[string]any{"Ints": []int{1, 2, 3}})
+	testOne(t, T{X: []int{0, 1, 2, 3, 4, 1, 2, 3}}, `{{ yield (T (X 0 .Ints 4 .Ints)) }}`, map[string]any{"Ints": []int{1, 2, 3}})
 }
