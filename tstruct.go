@@ -155,12 +155,26 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 	case reflect.Map:
 		return func(args ...reflect.Value) applyFn {
 			return func(dst reflect.Value) {
-				if len(args)&1 != 0 {
-					panic(fmt.Sprintf("odd number of args to %v, expected (key, elem) pairs, got %d args", name, len(args)))
-				}
 				f := dst.FieldByIndex(f.Index)
 				if f.IsZero() {
 					f.Set(reflect.MakeMap(f.Type()))
+				}
+				if len(args) == 1 {
+					// If it is a map arg with appropriate types, copy the elems over.
+					arg := devirt(args[0])
+					typ := arg.Type()
+					ftyp := f.Type()
+					if typ.Kind() == reflect.Map && typ.Key().AssignableTo(ftyp.Key()) && typ.Elem().AssignableTo(ftyp.Elem()) {
+						iter := arg.MapRange()
+						for iter.Next() {
+							f.SetMapIndex(iter.Key(), iter.Value())
+						}
+						// success
+						return
+					}
+				}
+				if len(args)&1 != 0 {
+					panic(fmt.Sprintf("odd number of args to %v, expected (key, elem) pairs, got %d args", name, len(args)))
 				}
 				for i := 0; i < len(args); i += 2 {
 					k := args[i]

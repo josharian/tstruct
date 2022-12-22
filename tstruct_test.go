@@ -336,3 +336,17 @@ func TestBringASliceToASliceFight(t *testing.T) {
 	testOne(t, T{X: []int{0, 1, 2, 3}}, `{{ yield (T (X 0 .Ints)) }}`, map[string]any{"Ints": []int{1, 2, 3}})
 	testOne(t, T{X: []int{0, 1, 2, 3, 4, 1, 2, 3}}, `{{ yield (T (X 0 .Ints 4 .Ints)) }}`, map[string]any{"Ints": []int{1, 2, 3}})
 }
+
+func TestDirectMapsWork(t *testing.T) {
+	type T struct {
+		X map[string]any
+	}
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[T](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"A": 1, "B": 2}
+	testOne(t, T{X: want}, `{{ yield (T (X .M)) }}`, map[string]any{"M": want})
+	testOne(t, T{X: want}, `{{ yield (T (X .M)) }}`, map[string]any{"M": map[string]int{"A": 1, "B": 2}})
+}
