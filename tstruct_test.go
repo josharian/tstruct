@@ -350,3 +350,17 @@ func TestDirectMapsWork(t *testing.T) {
 	testOne(t, T{X: want}, `{{ yield (T (X .M)) }}`, map[string]any{"M": want})
 	testOne(t, T{X: want}, `{{ yield (T (X .M)) }}`, map[string]any{"M": map[string]int{"A": 1, "B": 2}})
 }
+
+func TestBoolTrue(t *testing.T) {
+	type T struct {
+		X bool
+	}
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[T](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testOne(t, T{X: false}, `{{ yield (T (X false)) }}`, nil)
+	testOne(t, T{X: true}, `{{ yield (T (X true)) }}`, nil)
+	testOne(t, T{X: true}, `{{ yield (T (X)) }}`, nil)
+}

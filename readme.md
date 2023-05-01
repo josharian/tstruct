@@ -45,6 +45,8 @@ T{
 
 Note that order is irrelevant, except for slice appends.
 
+As a special case (matching package flag), you may omit the argument `true` when setting a bool field to true: `(Enabled)` is equivalent to `(Enabled true)`.
+
 If you have multiple struct types whose fields share a name, the field setters will Just Work, despite having a single name. However, no two struct types may share a name, nor can a struct type and a field share a name.
 
 To request that tstruct ignore a struct field, add the struct tag `tstruct:"-"` to it.
