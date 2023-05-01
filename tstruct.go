@@ -201,11 +201,21 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 	// Everything else: do a plain Set
 	return func(args ...reflect.Value) applyFn {
 		return func(dst reflect.Value) {
-			if len(args) != 1 {
+			out := dst.FieldByIndex(f.Index)
+			var x reflect.Value
+			switch len(args) {
+			case 0:
+				// special case for ergonomics: treat (X) as (X true) when destination has bool type
+				if out.Type().Kind() == reflect.Bool {
+					x = reflect.ValueOf(true)
+				}
+			case 1:
+				x = args[0]
+			}
+			if !x.IsValid() {
 				panic("wrong number of args to " + name + ", expected 1")
 			}
-			x := args[0]
-			convertAndSet(dst.FieldByIndex(f.Index), devirt(x))
+			convertAndSet(out, devirt(x))
 		}
 	}, nil
 }
