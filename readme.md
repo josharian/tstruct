@@ -1,8 +1,5 @@
 Package tstruct provides template FuncMap helpers to construct struct literals within a Go template.
 
-It has a reasonable number of code miles on it.
-I'm not quite ready to declare the API stable yet, but it's getting close.
-
 In your Go code:
 
 ```go
