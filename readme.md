@@ -48,6 +48,8 @@ If you have multiple struct types whose fields share a name, the field setters w
 
 To request that tstruct ignore a struct field, add the struct tag `tstruct:"-"` to it.
 
+To require that a value for struct field be explicitly provided, add the struct tag `tstruct:"+"` to it.
+
 If you need to construct an unusual type from a template, there's a magic method: `TStructSet`. To use it, declare a type that has that method on a pointer receiver. It can accept any number of args, which will be passed directly from the template args. In the method, set the value according to the args.
 
 Example:
