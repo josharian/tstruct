@@ -8,6 +8,8 @@ package tstruct
 import (
 	"fmt"
 	"reflect"
+	"sort"
+	"strings"
 )
 
 // AddFuncMap adds constructors for T to base.
@@ -71,8 +73,48 @@ func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
 			return fmt.Errorf("conflicting FuncMap entries for %s", rt.Name())
 		}
 	}
+
+	var required fieldsAreUnset
+	for i := 0; i < rt.NumField(); i++ {
+		f := rt.Field(i)
+		if !f.IsExported() || f.Tag.Get("tstruct") != "+" {
+			continue
+		}
+		// Require that this struct field be set.
+		if required == nil {
+			required = make(fieldsAreUnset)
+		}
+		required[f.Name] = true
+	}
+
 	fnmap[rt.Name()] = func(args ...applyFn) reflect.Value {
 		v := reflect.New(rt).Elem()
+		// If there are required fields, check whether they are about to be set.
+		if required != nil {
+			// clone required
+			// TODO: when Go 1.21 is out, use maps.Clone
+			r2 := make(fieldsAreUnset, len(required))
+			for k, v := range required {
+				r2[k] = v
+			}
+			rqv := reflect.ValueOf(r2)
+			// Call apply using our special sentinel map type.
+			// Each apply function will delete the field name it is responsible for
+			// from the map, but not do any further work.
+			for _, apply := range args {
+				apply(rqv)
+			}
+			// Gather all unset required fields.
+			if len(r2) > 0 {
+				missing := make([]string, 0, len(r2))
+				for k := range r2 {
+					missing = append(missing, rt.Name()+"."+k)
+				}
+				sort.Strings(missing)
+				panic(fmt.Sprintf("%s required but not provided", strings.Join(missing, ", ")))
+			}
+		}
+		// Now, actually set the fields.
 		for _, apply := range args {
 			apply(v)
 		}
@@ -130,6 +172,24 @@ func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
 	return nil
 }
 
+// fieldsAreUnset is a special sentinel type that applyFn recognizes.
+// It is a map from a field name to whether it remains unset.
+type fieldsAreUnset map[string]bool
+
+var fieldsAreUnsetType = reflect.TypeOf(fieldsAreUnset(nil))
+
+// didMarkFieldAsSet checks whether this is a request to mark the field name as having been set by an apply function.
+// If it returns true, the apply function must stop processing v.
+func didMarkFieldAsSet(v reflect.Value, name string) bool {
+	if v.Type() != fieldsAreUnsetType {
+		return false
+	}
+	// Update the map: This field is no longer unset.
+	m := v.Interface().(fieldsAreUnset)
+	delete(m, name)
+	return true
+}
+
 // genSavedApplyFnForField generates a savedApplyFn for f, to be given name name.
 func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, error) {
 	method, ok := reflect.PtrTo(f.Type).MethodByName("TStructSet")
@@ -142,6 +202,9 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 		}
 		return func(args ...reflect.Value) applyFn {
 			return func(v reflect.Value) {
+				if didMarkFieldAsSet(v, name) {
+					return
+				}
 				x := reflect.New(method.Type.In(0).Elem())
 				dvArgs := devirtAll(args)
 				args = append([]reflect.Value{x}, dvArgs...)
@@ -155,6 +218,9 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 	case reflect.Map:
 		return func(args ...reflect.Value) applyFn {
 			return func(dst reflect.Value) {
+				if didMarkFieldAsSet(dst, name) {
+					return
+				}
 				f := dst.FieldByIndex(f.Index)
 				if f.IsZero() {
 					f.Set(reflect.MakeMap(f.Type()))
@@ -186,6 +252,9 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 	case reflect.Slice:
 		return func(args ...reflect.Value) applyFn {
 			return func(dst reflect.Value) {
+				if didMarkFieldAsSet(dst, name) {
+					return
+				}
 				f := dst.FieldByIndex(f.Index)
 				for _, arg := range devirtAll(args) {
 					if arg.Type().AssignableTo(f.Type()) {
@@ -201,6 +270,9 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 	// Everything else: do a plain Set
 	return func(args ...reflect.Value) applyFn {
 		return func(dst reflect.Value) {
+			if didMarkFieldAsSet(dst, name) {
+				return
+			}
 			out := dst.FieldByIndex(f.Index)
 			var x reflect.Value
 			switch len(args) {
@@ -240,6 +312,9 @@ func setSavedApplyFn(fnmap map[string]any, name string, typ reflect.Type, fn sav
 	// and if not, dispatches to the previous savedApplyFn.
 	fnmap[name] = func(args ...reflect.Value) applyFn {
 		return func(dst reflect.Value) {
+			if didMarkFieldAsSet(dst, name) {
+				return
+			}
 			if dst.Type() == typ {
 				// We can handle this type! Do it.
 				fn(args...)(dst)

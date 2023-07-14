@@ -3,6 +3,7 @@ package tstruct_test
 import (
 	"io"
 	"reflect"
+	"strings"
 	"testing"
 	"text/template"
 
@@ -233,6 +234,25 @@ func TestInterfaceField(t *testing.T) {
 }
 
 func testOne[T any](t *testing.T, want T, tmpl string, dots ...any) {
+	err := testRunOne[T](t, want, tmpl, dots...)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testOneWantErrStrs[T any](t *testing.T, want T, tmpl string, substrs []string, dots ...any) {
+	err := testRunOne[T](t, want, tmpl, dots...)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	for _, substr := range substrs {
+		if !strings.Contains(err.Error(), substr) {
+			t.Errorf("expected error to contain %q, got %q", substr, err)
+		}
+	}
+}
+
+func testRunOne[T any](t *testing.T, want T, tmpl string, dots ...any) error {
 	t.Helper()
 	m := make(template.FuncMap)
 	err := tstruct.AddFuncMap[T](m)
@@ -253,10 +273,7 @@ func testOne[T any](t *testing.T, want T, tmpl string, dots ...any) {
 	if len(dots) == 1 {
 		dot = dots[0]
 	}
-	err = p.Execute(io.Discard, dot)
-	if err != nil {
-		t.Fatal(err)
-	}
+	return p.Execute(io.Discard, dot)
 }
 
 func TestRepeatedSliceStruct(t *testing.T) {
@@ -363,4 +380,162 @@ func TestBoolTrue(t *testing.T) {
 	testOne(t, T{X: false}, `{{ yield (T (X false)) }}`, nil)
 	testOne(t, T{X: true}, `{{ yield (T (X true)) }}`, nil)
 	testOne(t, T{X: true}, `{{ yield (T (X)) }}`, nil)
+}
+
+type R struct {
+	NotReq    string
+	ReqInt    int            `tstruct:"+"`
+	ReqSlice  []int          `tstruct:"+"`
+	ReqMap    map[string]int `tstruct:"+"`
+	ReqStruct S              `tstruct:"+"`
+	ReqZStr   Z              `tstruct:"+"`
+}
+
+func TestRequired(t *testing.T) {
+	// Check that providing required fields works.
+	want := R{
+		ReqInt:    1,
+		ReqSlice:  []int{1},
+		ReqMap:    map[string]int{"a": 1},
+		ReqStruct: S{URL: "x"},
+		ReqZStr:   "zhello",
+	}
+	const tmpl = `
+{{ yield
+	(R
+		(ReqInt 1)
+		(ReqSlice 1)
+		(ReqMap "a" 1)
+		(ReqStruct (S (URL "x")))
+		(ReqZStr "hello")
+	)
+}}
+`
+	testOne(t, want, tmpl)
+}
+
+func TestRequiredZeroValueIsOK(t *testing.T) {
+	// Check that providing required fields works.
+	want := R{
+		ReqZStr: "z",
+		ReqMap:  map[string]int{},
+	}
+	const tmpl = `
+{{ yield
+	(R
+		(ReqInt 0)
+		(ReqSlice)
+		(ReqMap)
+		(ReqStruct (S))
+		(ReqZStr "")
+	)
+}}
+`
+	testOne(t, want, tmpl)
+}
+
+func TestRequiredMissing(t *testing.T) {
+	// Check that we catch and report all missing required fields.
+	want := R{
+		ReqInt:    0,
+		ReqSlice:  []int{1},
+		ReqMap:    map[string]int{"a": 1},
+		ReqStruct: S{URL: "x"},
+		ReqZStr:   "zhello",
+	}
+	const tmpl = `
+{{ yield
+	(R
+	)
+}}
+`
+	testOneWantErrStrs(t, want, tmpl, []string{"required", "R.ReqInt", "R.ReqSlice", "R.ReqMap", "R.ReqStruct", "R.ReqZStr"})
+}
+
+func TestFieldReuseWithRequire(t *testing.T) {
+	// Test that we can reuse a field name if one of the uses is required, without interference.
+	type X struct {
+		F int
+	}
+	type Y struct {
+		F string `tstruct:"+"`
+	}
+
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[X](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tstruct.AddFuncMap[Y](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	calls := 0
+	m["yield"] = func(x any) error {
+		calls++
+		switch x.(type) {
+		case X:
+			want := X{}
+			if !reflect.DeepEqual(x, want) {
+				t.Fatalf("got %#v, want %#v", x, want)
+			}
+		default:
+			t.Fatalf("unexpected type %T", x)
+		}
+		return nil
+	}
+	const tmpl = `{{ yield (X) }} {{ yield (Y) }}`
+	p, err := template.New("test").Funcs(m).Parse(tmpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Execute(io.Discard, nil)
+	// ensure X succeeded
+	if calls != 1 {
+		t.Fatalf("got %d calls, want 1", calls)
+	}
+	// ensure Y failed, with the right error
+	if err == nil {
+		t.Fatal("expected error, got none")
+	}
+	if !strings.Contains(err.Error(), "required") {
+		t.Fatalf("expected error to contain %q, got %q", "required", err)
+	}
+}
+
+func TestRequiredTrackingNoSharedState(t *testing.T) {
+	// Test that we don't share state between each evaluation of a struct with required fields.
+	//
+	// We have a required fields.
+	// We will evaluate two templates: one with the field, and one without.
+	// If we share state, the second evaluation will succeed,
+	// because the first evaluation will have marked the field as present.
+	type X struct {
+		F int `tstruct:"+"`
+	}
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[X](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := template.New("test").Funcs(m)
+	// This should succeed: required fields are present.
+	t0, err := st.New("first").Parse(`{{ (X (F 1)) }}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = t0.Execute(io.Discard, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This should fail: required fields are missing.
+	t1, err := st.New("second").Parse(`{{ (X) }}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = t1.Execute(io.Discard, nil)
+	if err == nil {
+		t.Fatal("expected error about missing required field F, got none")
+	}
 }
