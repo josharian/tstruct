@@ -31,7 +31,7 @@ func AddFuncMap[T any](base map[string]any) error {
 	fnmap := make(map[string]any)
 	copyFuncMap(fnmap, base)
 	// Add struct and field funcs to fnmap.
-	err := addStructFuncs(rt, fnmap)
+	err := addStructFuncs[T](rt, fnmap)
 	if err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func copyFuncMap(dst, src map[string]any) {
 }
 
 // addStructFuncs adds funcs to fnmap to construct structs of type rt and to populate rt's fields.
-func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
+func addStructFuncs[T any](rt reflect.Type, fnmap map[string]any) error {
 	if rt.Name() == "" {
 		return fmt.Errorf("anonymous struct (type %v) is not supported", rt)
 	}
@@ -57,7 +57,7 @@ func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
 	// It takes as arguments functions that can be applied to modify the struct.
 	// We generate functions that return such arguments below.
 	if x, ok := fnmap[rt.Name()]; ok {
-		match := registeredFuncMatches(x, rt)
+		match := registeredFuncMatches[T](x, rt)
 		if !match {
 			return fmt.Errorf("conflicting FuncMap entries for %s", rt.Name())
 		}
@@ -76,7 +76,7 @@ func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
 		required[f.Name] = true
 	}
 
-	fnmap[rt.Name()] = func(args ...applyFn) reflect.Value {
+	fnmap[rt.Name()] = func(args ...applyFn) T {
 		v := reflect.New(rt).Elem()
 		// If there are required fields, check whether they are about to be set.
 		if required != nil {
@@ -107,7 +107,16 @@ func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
 		for _, apply := range args {
 			apply(v)
 		}
-		return v
+		var t T
+		switch any(t).(type) {
+		case reflect.Value:
+			// We want to return a reflect.Value.
+			// v already is a reflect.Value.
+			// (We know that; help the compiler.)
+			return any(v).(T)
+		}
+		// v holds a T. Extract it.
+		return v.Interface().(T)
 	}
 
 	// For each struct field, generate a function that modifies that struct field,
@@ -126,13 +135,13 @@ func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
 		case reflect.Struct:
 			// Process this struct's fields as well!
 			// TODO: avoid panic on recursively defined structs (but really, don't do that)
-			err := addStructFuncs(f.Type, fnmap)
+			err := addStructFuncs[reflect.Value](f.Type, fnmap)
 			if err != nil {
 				return err
 			}
 		case reflect.Slice:
 			if elem := f.Type.Elem(); elem.Kind() == reflect.Struct {
-				err := addStructFuncs(elem, fnmap)
+				err := addStructFuncs[reflect.Value](elem, fnmap)
 				if err != nil {
 					return err
 				}
@@ -140,7 +149,7 @@ func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
 		case reflect.Map:
 			for _, elem := range []reflect.Type{f.Type.Key(), f.Type.Elem()} {
 				if elem.Kind() == reflect.Struct {
-					err := addStructFuncs(elem, fnmap)
+					err := addStructFuncs[reflect.Value](elem, fnmap)
 					if err != nil {
 						return err
 					}
@@ -161,10 +170,15 @@ func addStructFuncs(rt reflect.Type, fnmap map[string]any) error {
 	return nil
 }
 
-func registeredFuncMatches(x any, rt reflect.Type) bool {
+func registeredFuncMatches[T any](x any, rt reflect.Type) bool {
 	// There's already a registered function with the name we want to use.
 	// If it is a tstruct constructor for the exact same type as we are
 	// trying to generate now, that's ok. Otherwise, fail.
+	_, isTypedCtor := x.(func(args ...applyFn) T)
+	if isTypedCtor {
+		// OK
+		return true
+	}
 	fn, isStructCtor := x.(func(args ...applyFn) reflect.Value)
 	if !isStructCtor {
 		// Not a tstruct funcmap entry for a struct type.
