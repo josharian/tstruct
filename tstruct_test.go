@@ -153,6 +153,52 @@ func TestFieldReuse(t *testing.T) {
 	}
 }
 
+type WrapS struct {
+	Inner S
+}
+
+type (
+	sFn  = func(...func(reflect.Value)) S
+	wsFn = func(...func(reflect.Value)) WrapS
+	rvFn = func(...func(reflect.Value)) reflect.Value
+)
+
+func TestFieldReuseOuterInner(t *testing.T) {
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[WrapS](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tstruct.AddFuncMap[S](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantType[sFn](t, m["S"])
+	wantType[wsFn](t, m["WrapS"])
+}
+
+func TestFieldReuseInnerOuter(t *testing.T) {
+	m := make(template.FuncMap)
+	err := tstruct.AddFuncMap[S](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tstruct.AddFuncMap[WrapS](m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantType[sFn](t, m["S"])
+	wantType[wsFn](t, m["WrapS"])
+}
+
+func wantType[T any](t *testing.T, got any) {
+	t.Helper()
+	z, ok := got.(T)
+	if !ok {
+		t.Fatalf("expected %T, got %T", z, got)
+	}
+}
+
 func TestCollisionDetection(t *testing.T) {
 	m := make(template.FuncMap)
 	m["S"] = func(x any) error { return nil }

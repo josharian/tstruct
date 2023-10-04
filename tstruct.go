@@ -59,7 +59,14 @@ func addStructFuncs[T any](rt reflect.Type, fnmap map[string]any) error {
 	if x, ok := fnmap[rt.Name()]; ok {
 		match := registeredFuncMatches[T](x, rt)
 		if !match {
-			return fmt.Errorf("conflicting FuncMap entries for %s", rt.Name())
+			return fmt.Errorf("conflicting FuncMap entries for %s: %T", rt.Name(), x)
+		}
+		// We already have a constructor for this struct type.
+		// Replace it with a more precisely typed one, if possible.
+		// But if T is reflect.Value, we risk overwriting a more precisely typed function.
+		var zero T
+		if reflect.TypeOf(zero) == reflectValueType {
+			return nil
 		}
 	}
 
@@ -179,19 +186,27 @@ func registeredFuncMatches[T any](x any, rt reflect.Type) bool {
 		// OK
 		return true
 	}
-	fn, isStructCtor := x.(func(args ...applyFn) reflect.Value)
-	if !isStructCtor {
-		// Not a tstruct funcmap entry for a struct type.
+	// Check whether x is a func(args ...applyFn) T for any T, including possibly reflect.Value.
+	// If so, call x to get a struct value whose type we can inspect.
+	xfn := reflect.ValueOf(x)
+	if xfn.Kind() != reflect.Func {
 		return false
 	}
-	// Use the function to create a struct!
-	// If it is not the same kind of struct that we want to add here,
-	// then there is a naming conflict.
-	if fn().Type() != rt {
-		// Not a tstruct funcmap entry for _this_ struct type.
+	xType := xfn.Type()
+	if xType.NumIn() != 1 || xType.NumOut() != 1 || !xType.IsVariadic() {
 		return false
 	}
-	return true
+	in := xType.In(0)
+	if in.Kind() != reflect.Slice || in.Elem() != applyFnType {
+		return false
+	}
+	out := xfn.Call(nil)
+	s := out[0]
+	// If s is a reflect.Value (holding a reflect.Value!), use its contents instead.
+	if s.Type() == reflectValueType {
+		s = s.Interface().(reflect.Value)
+	}
+	return s.Type() == rt
 }
 
 // fieldsAreUnset is a special sentinel type that applyFn recognizes.
@@ -355,6 +370,12 @@ type savedApplyFn = func(args ...reflect.Value) applyFn
 
 // An applyFn applies previously saved arguments to v.
 type applyFn = func(v reflect.Value)
+
+// TODO: use reflect.TypeFor once Go 1.22 comes out
+var (
+	applyFnType      = reflect.TypeOf(applyFn(nil))
+	reflectValueType = reflect.TypeOf(reflect.Value{})
+)
 
 // devirt makes x have a concrete type.
 func devirt(x reflect.Value) reflect.Value {
