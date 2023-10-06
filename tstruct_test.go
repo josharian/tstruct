@@ -585,3 +585,39 @@ func TestRequiredTrackingNoSharedState(t *testing.T) {
 		t.Fatal("expected error about missing required field F, got none")
 	}
 }
+
+func TestPtr(t *testing.T) {
+	want := &T{
+		A: "a",
+	}
+	const tmpl = `
+{{ yield
+	(T
+		(A "a")
+	)
+}}
+`
+	testOne(t, want, tmpl)
+}
+
+type Ptr struct {
+	P *T
+}
+
+func TestInteriorPtr(t *testing.T) {
+	want := &Ptr{
+		P: &T{
+			A: "a",
+		},
+	}
+	const tmpl = `
+{{ yield
+	(Ptr
+		(P (T
+			(A "a")
+		))
+	)
+}}
+`
+	testOne(t, want, tmpl)
+}

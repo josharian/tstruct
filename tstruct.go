@@ -23,6 +23,10 @@ func AddFuncMap[T any](base map[string]any) error {
 	}
 	var t T
 	rt := reflect.TypeOf(t)
+	origrt := rt
+	if rt.Kind() == reflect.Pointer {
+		rt = rt.Elem()
+	}
 	if rt.Kind() != reflect.Struct {
 		return fmt.Errorf("non-struct type %v", rt)
 	}
@@ -31,7 +35,7 @@ func AddFuncMap[T any](base map[string]any) error {
 	fnmap := make(map[string]any)
 	copyFuncMap(fnmap, base)
 	// Add struct and field funcs to fnmap.
-	err := addStructFuncs[T](rt, fnmap)
+	err := addStructFuncs[T](origrt, fnmap)
 	if err != nil {
 		return err
 	}
@@ -48,6 +52,10 @@ func copyFuncMap(dst, src map[string]any) {
 
 // addStructFuncs adds funcs to fnmap to construct structs of type rt and to populate rt's fields.
 func addStructFuncs[T any](rt reflect.Type, fnmap map[string]any) error {
+	origrt := rt
+	if rt.Kind() == reflect.Ptr {
+		rt = rt.Elem()
+	}
 	if rt.Name() == "" {
 		return fmt.Errorf("anonymous struct (type %v) is not supported", rt)
 	}
@@ -122,6 +130,9 @@ func addStructFuncs[T any](rt reflect.Type, fnmap map[string]any) error {
 			// (We know that; help the compiler.)
 			return any(v).(T)
 		}
+		if origrt.Kind() == reflect.Pointer {
+			v = v.Addr()
+		}
 		// v holds a T. Extract it.
 		return v.Interface().(T)
 	}
@@ -160,6 +171,13 @@ func addStructFuncs[T any](rt reflect.Type, fnmap map[string]any) error {
 					if err != nil {
 						return err
 					}
+				}
+			}
+		case reflect.Pointer:
+			if elem := f.Type.Elem(); elem.Kind() == reflect.Struct {
+				err := addStructFuncs[reflect.Value](f.Type, fnmap)
+				if err != nil {
+					return err
 				}
 			}
 		}
@@ -302,7 +320,21 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 				}
 			}
 		}, nil
-		// TODO: reflect.Array: Set by index with a func named AtName? Does it even matter?
+	// TODO: reflect.Array: Set by index with a func named AtName? Does it even matter?
+	case reflect.Pointer:
+		return func(args ...reflect.Value) applyFn {
+			return func(dst reflect.Value) {
+				if didMarkFieldAsSet(dst, name) {
+					return
+				}
+				if len(args) != 1 {
+					panic("wrong number of args to " + name + ", expected 1")
+				}
+				out := dst.FieldByIndex(f.Index)
+				x := args[0].Addr()
+				convertAndSet(out, devirt(x))
+			}
+		}, nil
 	}
 	// Everything else: do a plain Set
 	return func(args ...reflect.Value) applyFn {
