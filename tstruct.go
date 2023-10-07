@@ -173,13 +173,6 @@ func addStructFuncs[T any](rt reflect.Type, fnmap map[string]any) error {
 					}
 				}
 			}
-		case reflect.Pointer:
-			if elem := f.Type.Elem(); elem.Kind() == reflect.Struct {
-				err := addStructFuncs[reflect.Value](f.Type, fnmap)
-				if err != nil {
-					return err
-				}
-			}
 		}
 		name := f.Name
 		// TODO: modify fn name based on field type? E.g. AppendF for a field named F of slice type?
@@ -320,21 +313,7 @@ func genSavedApplyFnForField(f reflect.StructField, name string) (savedApplyFn, 
 				}
 			}
 		}, nil
-	// TODO: reflect.Array: Set by index with a func named AtName? Does it even matter?
-	case reflect.Pointer:
-		return func(args ...reflect.Value) applyFn {
-			return func(dst reflect.Value) {
-				if didMarkFieldAsSet(dst, name) {
-					return
-				}
-				if len(args) != 1 {
-					panic("wrong number of args to " + name + ", expected 1")
-				}
-				out := dst.FieldByIndex(f.Index)
-				x := args[0].Addr()
-				convertAndSet(out, devirt(x))
-			}
-		}, nil
+		// TODO: reflect.Array: Set by index with a func named AtName? Does it even matter?
 	}
 	// Everything else: do a plain Set
 	return func(args ...reflect.Value) applyFn {

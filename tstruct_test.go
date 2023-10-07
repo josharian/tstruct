@@ -603,21 +603,3 @@ func TestPtr(t *testing.T) {
 type Ptr struct {
 	P *T
 }
-
-func TestInteriorPtr(t *testing.T) {
-	want := &Ptr{
-		P: &T{
-			A: "a",
-		},
-	}
-	const tmpl = `
-{{ yield
-	(Ptr
-		(P (T
-			(A "a")
-		))
-	)
-}}
-`
-	testOne(t, want, tmpl)
-}
